@@ -1,0 +1,35 @@
+name: Package plugin release
+on:
+  release:
+    types: [published]
+permissions:
+  contents: write
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate version and build WordPress ZIP
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python3 - <<'PY'
+          import os, re, zipfile
+          from pathlib import Path
+          root = Path('.')
+          source = (root / 'slind-contact-form.php').read_text()
+          version = re.search(r'Version:\s*(\S+)', source).group(1)
+          assert os.environ['RELEASE_TAG'].removeprefix('v') == version, 'Release tag must match plugin version'
+          assert f"'SLIND_CONTACT_FORM_VERSION', '{version}'" in source
+          with zipfile.ZipFile('slind-contact-form.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
+              for name in ['slind-contact-form.php', 'uninstall.php', 'readme.txt', 'src', 'assets']:
+                  path = root / name
+                  for item in ([path] if path.is_file() else sorted(path.rglob('*'))):
+                      if item.is_file():
+                          archive.write(item, 'slind-contact-form/' + item.as_posix())
+          PY
+      - name: Attach installation package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" slind-contact-form.zip --clobber
